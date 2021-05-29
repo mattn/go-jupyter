@@ -52,10 +52,6 @@ type Metadata struct {
 		Name        string `json:"name"`
 	} `json:"kernelspec"`
 	LanguageInfo struct {
-		CodemirrorMode struct {
-			Name    string `json:"name"`
-			Version int    `json:"version"`
-		} `json:"codemirror_mode"`
 		FileExtension     string `json:"file_extension"`
 		Mimetype          string `json:"mimetype"`
 		Name              string `json:"name"`
@@ -66,10 +62,10 @@ type Metadata struct {
 }
 
 type DocumentContent struct {
-	Cells []Cell `json:"cells"`
-	//Metadata      Metadata `json:"metadata,omitempty"`
-	Nbformat      int `json:"nbformat"`
-	NbformatMinor int `json:"nbformat_minor"`
+	Cells         []Cell   `json:"cells"`
+	Metadata      Metadata `json:"metadata,omitempty"`
+	Nbformat      int      `json:"nbformat"`
+	NbformatMinor int      `json:"nbformat_minor"`
 }
 
 type Document struct {
@@ -114,7 +110,10 @@ type Message struct {
 }
 
 type ExecContent struct {
-	Text string `json:"text"`
+	Text           string `json:"text,omitempty"`
+	Ename          string `json:"ename,omitempty"`
+	Evalue         string `json:"evalue,omitempty"`
+	ExecutionState string `json:"execution_state,omitempty"`
 }
 
 type ExecResult struct {
@@ -181,7 +180,7 @@ func (c *NotebookOp) Code(id string) (string, error) {
 	return "", nil
 }
 
-func (c *NotebookOp) Run(w io.Writer) error {
+func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 	u, err := url.Parse(c.c.config.Origin)
 	if err != nil {
 		return err
@@ -191,7 +190,7 @@ func (c *NotebookOp) Run(w io.Writer) error {
 
 	if c.k == nil {
 		u.Path = path.Join(base, "api", "kernels")
-		req, err := http.NewRequest(http.MethodPost, u.String(), nil)
+		req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 		if err != nil {
 			return err
 		}
@@ -202,99 +201,20 @@ func (c *NotebookOp) Run(w io.Writer) error {
 		}
 		defer resp.Body.Close()
 
-		var kernel Kernel
-		err = json.NewDecoder(resp.Body).Decode(&kernel)
+		var kernels []Kernel
+		err = json.NewDecoder(resp.Body).Decode(&kernels)
 		if err != nil {
 			return err
 		}
-		c.k = &kernel
-	}
-
-	u.Scheme = "ws"
-	u.Path = path.Join(base, "api", "kernels", c.k.ID, "channels")
-	config, err := websocket.NewConfig(u.String(), c.c.config.Origin)
-	if err != nil {
-		log.Fatal(err)
-	}
-	config.Header.Add("Authorization", "token "+c.c.config.Token)
-	ws, err := websocket.DialConfig(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ws.Close()
-
-	for _, code := range c.d.Content.Cells {
-		if code.Source == nil {
-			continue
-		}
-		if s, ok := code.Source.(string); ok && s == "" {
-			continue
-		}
-		var header MessageHeader
-		header.MsgType = "execute_request"
-		header.MsgID = uuid.NewString()
-		header.Session = c.s
-		payload := Message{
-			Header:       header,
-			ParentHeader: header,
-			Metadata:     make(map[string]interface{}),
-			Content: MessageContent{
-				Code:   code.Source,
-				Silent: false,
-			},
-		}
-
-		err = websocket.JSON.Send(ws, payload)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		var result ExecResult
-		for {
-			err := websocket.JSON.Receive(ws, &result)
-			if err != nil {
-				break
-			}
-			if err == nil && result.MsgType == "stream" {
-				_, err = fmt.Fprint(w, result.Content.Text)
-				if err != nil {
-					return err
-				}
+		for _, kernel := range kernels {
+			if kernel.Name == c.d.Content.Metadata.Kernelspec.Name {
+				c.k = &kernel
 				break
 			}
 		}
-	}
-
-	return nil
-}
-
-func (c *NotebookOp) Exec(id string, w io.Writer) error {
-	u, err := url.Parse(c.c.config.Origin)
-	if err != nil {
-		return err
-	}
-
-	base := u.Path
-
-	if c.k == nil {
-		u.Path = path.Join(base, "api", "kernels")
-		req, err := http.NewRequest(http.MethodPost, u.String(), nil)
-		if err != nil {
-			return err
+		if c.k == nil {
+			return nil
 		}
-		req.Header.Add("Authorization", "token "+c.c.config.Token)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		var kernel Kernel
-		err = json.NewDecoder(resp.Body).Decode(&kernel)
-		if err != nil {
-			return err
-		}
-		c.k = &kernel
 	}
 
 	u.Scheme = "ws"
@@ -333,24 +253,47 @@ func (c *NotebookOp) Exec(id string, w io.Writer) error {
 				Silent: false,
 			},
 		}
+		fmt.Println(code.Source)
 
 		err = websocket.JSON.Send(ws, payload)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
+		/*
+			var result interface{}
+			for {
+				err := websocket.JSON.Receive(ws, &result)
+				if err != nil {
+					break
+				}
+				fmt.Println(result)
+			}
+		*/
 		var result ExecResult
+		var input bool
 		for {
 			err := websocket.JSON.Receive(ws, &result)
 			if err != nil {
 				break
 			}
 			if result.MsgType == "stream" {
-				_, err = fmt.Fprint(w, result.Content.Text)
+				_, err = fmt.Fprint(stdout, result.Content.Text)
 				if err != nil {
 					return err
 				}
 				break
+			}
+			if result.MsgType == "error" {
+				return fmt.Errorf("%s: %s", result.Content.Ename, result.Content.Evalue)
+			}
+			if result.MsgType == "status" {
+				if input && result.Content.ExecutionState == "idle" {
+					break
+				}
+			}
+			if result.MsgType == "execute_input" {
+				input = true
 			}
 		}
 	}
