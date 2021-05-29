@@ -26,11 +26,14 @@ func cmdDoc(c *cli.Context) error {
 		}
 	} else {
 		for _, cell := range notebook.Doc().Content.Cells {
-			if cell.CellType == "code" {
-				fmt.Println(cell.Source)
-				for _, output := range cell.Outputs {
-					if s, ok := output["text"]; ok {
-						fmt.Println(s)
+			if cell.CellType == "code" && cell.Source != nil {
+				code := cell.Source.(string)
+				if code != "" {
+					fmt.Println(code)
+					for _, output := range cell.Outputs {
+						if s, ok := output["text"]; ok {
+							fmt.Print(s)
+						}
 					}
 				}
 			}
