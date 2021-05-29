@@ -164,12 +164,12 @@ func (c *NotebookOp) Doc() *Document {
 	return &c.d
 }
 
-func (c *NotebookOp) CodeIDs() ([]string, error) {
+func (c *NotebookOp) CodeIDs() []string {
 	ids := []string{}
 	for _, cell := range c.d.Content.Cells {
 		ids = append(ids, cell.ID)
 	}
-	return ids, nil
+	return ids
 }
 
 func (c *NotebookOp) Code(id string) (string, error) {

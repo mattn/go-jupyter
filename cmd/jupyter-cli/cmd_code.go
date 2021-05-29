@@ -26,11 +26,7 @@ func cmdCode(c *cli.Context) error {
 				return err
 			}
 		} else {
-			ids, err := notebook.CodeIDs()
-			if err != nil {
-				return err
-			}
-			for _, id := range ids {
+			for _, id := range notebook.CodeIDs() {
 				fmt.Println(id)
 			}
 		}

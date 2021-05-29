@@ -17,10 +17,19 @@ func cmdExec(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, arg := range c.Args().Slice()[1:] {
-		err = notebook.Exec(arg, os.Stdout)
-		if err != nil {
-			return err
+	if c.Args().Len() == 1 {
+		for _, arg := range notebook.CodeIDs() {
+			err = notebook.Exec(arg, os.Stdout)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		for _, arg := range c.Args().Slice()[1:] {
+			err = notebook.Exec(arg, os.Stdout)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
