@@ -253,7 +253,6 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 				Silent: false,
 			},
 		}
-		fmt.Println(code.Source)
 
 		err = websocket.JSON.Send(ws, payload)
 		if err != nil {
