@@ -38,9 +38,26 @@ func main() {
 			Action: cmdUpdate,
 		},
 		{
-			Name:   "code",
-			Usage:  "show code",
+			Name:  "code",
+			Usage: "show code",
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:  "json",
+					Usage: "output JSON",
+				},
+			},
 			Action: cmdCode,
+		},
+		{
+			Name:  "doc",
+			Usage: "show document",
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:  "json",
+					Usage: "output JSON",
+				},
+			},
+			Action: cmdDoc,
 		},
 		{
 			Name:   "exec",

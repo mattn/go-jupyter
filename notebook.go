@@ -40,9 +40,9 @@ type Cell struct {
 	//Metadata       struct {
 	//Trusted bool `json:"trusted"`
 	//} `json:"metadata"`
-	Metadata interface{}   `json:"metadata,omitempty"`
-	Outputs  []interface{} `json:"outputs,omitempty"`
-	Source   interface{}   `json:"source,omitempty"`
+	Metadata interface{}              `json:"metadata,omitempty"`
+	Outputs  []map[string]interface{} `json:"outputs,omitempty"`
+	Source   interface{}              `json:"source,omitempty"`
 }
 
 type Metadata struct {
@@ -158,6 +158,10 @@ func (c *Client) Notebook(p string) (*NotebookOp, error) {
 		return nil, err
 	}
 	return &NotebookOp{c: c, p: p, d: d, s: uuid.NewString(), k: nil}, nil
+}
+
+func (c *NotebookOp) Doc() *Document {
+	return &c.d
 }
 
 func (c *NotebookOp) CodeIDs() ([]string, error) {

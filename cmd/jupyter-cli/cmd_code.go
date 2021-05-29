@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/mattn/go-jupyter"
 	"github.com/urfave/cli/v2"
@@ -18,12 +20,19 @@ func cmdCode(c *cli.Context) error {
 		return err
 	}
 	if c.Args().Len() == 1 {
-		ids, err := notebook.CodeIDs()
-		if err != nil {
-			return err
-		}
-		for _, id := range ids {
-			fmt.Println(id)
+		if c.Bool("json") {
+			err = json.NewEncoder(os.Stdout).Encode(notebook.Doc().Content.Cells)
+			if err != nil {
+				return err
+			}
+		} else {
+			ids, err := notebook.CodeIDs()
+			if err != nil {
+				return err
+			}
+			for _, id := range ids {
+				fmt.Println(id)
+			}
 		}
 	} else {
 		for _, arg := range c.Args().Slice() {
