@@ -38,6 +38,11 @@ func main() {
 			Action: cmdUpdate,
 		},
 		{
+			Name:   "code",
+			Usage:  "show code",
+			Action: cmdCode,
+		},
+		{
 			Name:   "exec",
 			Usage:  "execute content",
 			Action: cmdExec,

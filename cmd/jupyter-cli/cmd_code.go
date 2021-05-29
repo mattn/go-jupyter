@@ -1,13 +1,13 @@
 package main
 
 import (
-	"os"
+	"fmt"
 
 	"github.com/mattn/go-jupyter"
 	"github.com/urfave/cli/v2"
 )
 
-func cmdExec(c *cli.Context) error {
+func cmdCode(c *cli.Context) error {
 	client := jupyter.NewClient(jupyter.Config{
 		Token:  c.String("token"),
 		Origin: c.String("origin"),
@@ -17,10 +17,21 @@ func cmdExec(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, arg := range c.Args().Slice()[1:] {
-		err = notebook.Exec(arg, os.Stdout)
+	if c.Args().Len() == 1 {
+		ids, err := notebook.CodeIDs()
 		if err != nil {
 			return err
+		}
+		for _, id := range ids {
+			fmt.Println(id)
+		}
+	} else {
+		for _, arg := range c.Args().Slice() {
+			code, err := notebook.Code(arg)
+			if err != nil {
+				return err
+			}
+			fmt.Print(code)
 		}
 	}
 	return nil

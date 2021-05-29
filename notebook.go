@@ -132,6 +132,7 @@ type NotebookOp struct {
 	p string
 	d Document
 	s string
+	k *Kernel
 }
 
 func (c *Client) Notebook(p string) (*NotebookOp, error) {
@@ -156,10 +157,18 @@ func (c *Client) Notebook(p string) (*NotebookOp, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &NotebookOp{c: c, p: p, d: d, s: uuid.NewString()}, nil
+	return &NotebookOp{c: c, p: p, d: d, s: uuid.NewString(), k: nil}, nil
 }
 
-func (c *NotebookOp) Code(p string, id string) (string, error) {
+func (c *NotebookOp) CodeIDs() ([]string, error) {
+	ids := []string{}
+	for _, cell := range c.d.Content.Cells {
+		ids = append(ids, cell.ID)
+	}
+	return ids, nil
+}
+
+func (c *NotebookOp) Code(id string) (string, error) {
 	for _, cell := range c.d.Content.Cells {
 		if cell.ID == id {
 			return cell.Source.(string), nil
@@ -168,33 +177,37 @@ func (c *NotebookOp) Code(p string, id string) (string, error) {
 	return "", nil
 }
 
-func (c *NotebookOp) Exec(ids []string, w io.Writer) error {
+func (c *NotebookOp) Run(w io.Writer) error {
 	u, err := url.Parse(c.c.config.Origin)
 	if err != nil {
 		return err
 	}
 
 	base := u.Path
-	u.Path = path.Join(base, "api", "kernels")
-	req, err := http.NewRequest(http.MethodPost, u.String(), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Authorization", "token "+c.c.config.Token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
 
-	var kernel Kernel
-	err = json.NewDecoder(resp.Body).Decode(&kernel)
-	if err != nil {
-		return err
+	if c.k == nil {
+		u.Path = path.Join(base, "api", "kernels")
+		req, err := http.NewRequest(http.MethodPost, u.String(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "token "+c.c.config.Token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		var kernel Kernel
+		err = json.NewDecoder(resp.Body).Decode(&kernel)
+		if err != nil {
+			return err
+		}
+		c.k = &kernel
 	}
 
 	u.Scheme = "ws"
-	u.Path = path.Join(base, "api", "kernels", kernel.ID, "channels")
+	u.Path = path.Join(base, "api", "kernels", c.k.ID, "channels")
 	config, err := websocket.NewConfig(u.String(), c.c.config.Origin)
 	if err != nil {
 		log.Fatal(err)
@@ -212,19 +225,6 @@ func (c *NotebookOp) Exec(ids []string, w io.Writer) error {
 		}
 		if s, ok := code.Source.(string); ok && s == "" {
 			continue
-		}
-
-		if len(ids) > 0 {
-			found := ""
-			for _, id := range ids {
-				if code.ID == id {
-					found = id
-					break
-				}
-			}
-			if found == "" {
-				continue
-			}
 		}
 		var header MessageHeader
 		header.MsgType = "execute_request"
@@ -252,6 +252,96 @@ func (c *NotebookOp) Exec(ids []string, w io.Writer) error {
 				break
 			}
 			if err == nil && result.MsgType == "stream" {
+				_, err = fmt.Fprint(w, result.Content.Text)
+				if err != nil {
+					return err
+				}
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *NotebookOp) Exec(id string, w io.Writer) error {
+	u, err := url.Parse(c.c.config.Origin)
+	if err != nil {
+		return err
+	}
+
+	base := u.Path
+
+	if c.k == nil {
+		u.Path = path.Join(base, "api", "kernels")
+		req, err := http.NewRequest(http.MethodPost, u.String(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "token "+c.c.config.Token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		var kernel Kernel
+		err = json.NewDecoder(resp.Body).Decode(&kernel)
+		if err != nil {
+			return err
+		}
+		c.k = &kernel
+	}
+
+	u.Scheme = "ws"
+	u.Path = path.Join(base, "api", "kernels", c.k.ID, "channels")
+	config, err := websocket.NewConfig(u.String(), c.c.config.Origin)
+	if err != nil {
+		log.Fatal(err)
+	}
+	config.Header.Add("Authorization", "token "+c.c.config.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer ws.Close()
+
+	for _, code := range c.d.Content.Cells {
+		if code.Source == nil {
+			continue
+		}
+		if s, ok := code.Source.(string); ok && s == "" {
+			continue
+		}
+		if code.ID != id {
+			continue
+		}
+		var header MessageHeader
+		header.MsgType = "execute_request"
+		header.MsgID = uuid.NewString()
+		header.Session = c.s
+		payload := Message{
+			Header:       header,
+			ParentHeader: header,
+			Metadata:     make(map[string]interface{}),
+			Content: MessageContent{
+				Code:   code.Source,
+				Silent: false,
+			},
+		}
+
+		err = websocket.JSON.Send(ws, payload)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		var result ExecResult
+		for {
+			err := websocket.JSON.Receive(ws, &result)
+			if err != nil {
+				break
+			}
+			if result.MsgType == "stream" {
 				_, err = fmt.Fprint(w, result.Content.Text)
 				if err != nil {
 					return err
