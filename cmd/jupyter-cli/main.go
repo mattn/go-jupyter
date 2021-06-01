@@ -60,8 +60,14 @@ func main() {
 			Action: cmdDoc,
 		},
 		{
-			Name:   "exec",
-			Usage:  "execute content",
+			Name:  "exec",
+			Usage: "execute content",
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:  "update",
+					Usage: "update JSON",
+				},
+			},
 			Action: cmdExec,
 		},
 	}

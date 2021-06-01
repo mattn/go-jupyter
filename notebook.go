@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -159,6 +158,16 @@ func (c *Client) Notebook(p string) (*NotebookOp, error) {
 	return &NotebookOp{c: c, p: p, d: d, s: uuid.NewString(), k: nil}, nil
 }
 
+func (c *NotebookOp) Update(in io.Reader) error {
+	var d Document
+	err := json.NewDecoder(in).Decode(&d)
+	if err != nil {
+		return err
+	}
+	c.d = d
+	return nil
+}
+
 func (c *NotebookOp) Doc() *Document {
 	return &c.d
 }
@@ -221,12 +230,12 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 	u.Path = path.Join(base, "api", "kernels", c.k.ID, "channels")
 	config, err := websocket.NewConfig(u.String(), c.c.config.Origin)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	config.Header.Add("Authorization", "token "+c.c.config.Token)
 	ws, err := websocket.DialConfig(config)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer ws.Close()
 
@@ -259,16 +268,6 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 
-		/*
-			var result interface{}
-			for {
-				err := websocket.JSON.Receive(ws, &result)
-				if err != nil {
-					break
-				}
-				fmt.Println(result)
-			}
-		*/
 		var result ExecResult
 		var input bool
 		for {
@@ -281,7 +280,6 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 				if err != nil {
 					return err
 				}
-				break
 			}
 			if result.MsgType == "error" {
 				return fmt.Errorf("%s: %s", result.Content.Ename, result.Content.Evalue)
