@@ -2,6 +2,7 @@ package jupyter
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -113,6 +114,7 @@ type ExecContent struct {
 	Ename          string `json:"ename,omitempty"`
 	Evalue         string `json:"evalue,omitempty"`
 	ExecutionState string `json:"execution_state,omitempty"`
+	ExecutionCount *int   `json:"execution_count,omitempty"`
 }
 
 type ExecResult struct {
@@ -199,12 +201,23 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 
 	if c.k == nil {
 		u.Path = path.Join(base, "api", "kernels")
-		req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+		req, err := http.NewRequest(http.MethodPost, u.String(), nil)
 		if err != nil {
 			return err
 		}
 		req.Header.Add("Authorization", "token "+c.c.config.Token)
 		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		req, err = http.NewRequest(http.MethodGet, u.String(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "token "+c.c.config.Token)
+		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -222,7 +235,7 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 			}
 		}
 		if c.k == nil {
-			return nil
+			return errors.New("kernel not found")
 		}
 	}
 
