@@ -110,11 +110,12 @@ type Message struct {
 }
 
 type ExecContent struct {
-	Text           string `json:"text,omitempty"`
-	Ename          string `json:"ename,omitempty"`
-	Evalue         string `json:"evalue,omitempty"`
-	ExecutionState string `json:"execution_state,omitempty"`
-	ExecutionCount *int   `json:"execution_count,omitempty"`
+	Text           string                 `json:"text,omitempty"`
+	Ename          string                 `json:"ename,omitempty"`
+	Evalue         string                 `json:"evalue,omitempty"`
+	ExecutionState string                 `json:"execution_state,omitempty"`
+	ExecutionCount *int                   `json:"execution_count,omitempty"`
+	Data           map[string]interface{} `json:"data,omitempty"`
 }
 
 type ExecResult struct {
@@ -135,6 +136,10 @@ type NotebookOp struct {
 	k *Kernel
 }
 
+func (c *Client) Session() string {
+	return c.config.Session
+}
+
 func (c *Client) Notebook(p string) (*NotebookOp, error) {
 	u, err := url.Parse(c.config.Origin)
 	if err != nil {
@@ -151,13 +156,21 @@ func (c *Client) Notebook(p string) (*NotebookOp, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		var errmsg Error
+		err = json.NewDecoder(resp.Body).Decode(&errmsg)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(errmsg.Message)
+	}
 
 	var d Document
 	err = json.NewDecoder(resp.Body).Decode(&d)
 	if err != nil {
 		return nil, err
 	}
-	return &NotebookOp{c: c, p: p, d: d, s: uuid.NewString(), k: nil}, nil
+	return &NotebookOp{c: c, p: p, d: d, s: c.config.Session, k: nil}, nil
 }
 
 func (c *NotebookOp) Update(in io.Reader) error {
@@ -211,6 +224,14 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			var errmsg Error
+			err = json.NewDecoder(resp.Body).Decode(&errmsg)
+			if err != nil {
+				return err
+			}
+			return errors.New(errmsg.Message)
+		}
 
 		req, err = http.NewRequest(http.MethodGet, u.String(), nil)
 		if err != nil {
@@ -300,6 +321,16 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 			if result.MsgType == "status" {
 				if input && result.Content.ExecutionState == "idle" {
 					break
+				}
+			}
+			if result.MsgType == "execute_result" {
+				if result.Content.Data != nil {
+					if s, ok := result.Content.Data["text/plain"]; ok {
+						_, err = fmt.Fprint(stdout, s)
+						if err != nil {
+							return err
+						}
+					}
 				}
 			}
 			if result.MsgType == "execute_input" {

@@ -53,6 +53,14 @@ func (c *Client) List(p string) ([]ContentsContent, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		var errmsg Error
+		err = json.NewDecoder(resp.Body).Decode(&errmsg)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(errmsg.Message)
+	}
 	var result Contents
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
@@ -77,6 +85,14 @@ func (c *Client) Cat(p string, w io.Writer) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		var errmsg Error
+		err = json.NewDecoder(resp.Body).Decode(&errmsg)
+		if err != nil {
+			return err
+		}
+		return errors.New(errmsg.Message)
+	}
 	_, err = io.Copy(w, resp.Body)
 	return err
 }
@@ -97,6 +113,14 @@ func (c *Client) Get(p string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		var errmsg Error
+		err = json.NewDecoder(resp.Body).Decode(&errmsg)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(errmsg.Message)
+	}
 	return ioutil.ReadAll(resp.Body)
 }
 

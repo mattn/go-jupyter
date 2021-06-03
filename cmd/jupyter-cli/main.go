@@ -19,6 +19,11 @@ func main() {
 			Usage:   "jupyter API token",
 			EnvVars: []string{"JUPYTER_CLI_TOKEN"},
 		},
+		&cli.StringFlag{
+			Name:    "session",
+			Usage:   "jupyter session ID",
+			EnvVars: []string{"JUPYTER_CLI_SESSION"},
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -69,6 +74,16 @@ func main() {
 				},
 			},
 			Action: cmdExec,
+		},
+		{
+			Name:   "session",
+			Usage:  "generate session ID",
+			Action: cmdSession,
+		},
+		{
+			Name:   "new-id",
+			Usage:  "generate ID",
+			Action: cmdNewID,
 		},
 	}
 	app.RunAndExitOnError()

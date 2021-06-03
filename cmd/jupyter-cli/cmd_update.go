@@ -10,8 +10,9 @@ import (
 
 func cmdUpdate(c *cli.Context) error {
 	client := jupyter.NewClient(jupyter.Config{
-		Token:  c.String("token"),
-		Origin: c.String("origin"),
+		Token:   c.String("token"),
+		Origin:  c.String("origin"),
+		Session: c.String("session"),
 	})
 
 	var in io.Reader = os.Stdin
