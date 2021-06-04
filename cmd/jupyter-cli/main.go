@@ -72,6 +72,10 @@ func main() {
 					Name:  "update",
 					Usage: "update JSON",
 				},
+				&cli.BoolFlag{
+					Name:  "json",
+					Usage: "output JSON",
+				},
 			},
 			Action: cmdExec,
 		},

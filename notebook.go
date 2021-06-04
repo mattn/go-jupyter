@@ -341,3 +341,130 @@ func (c *NotebookOp) Exec(id string, stdout io.Writer, stderr io.Writer) error {
 
 	return nil
 }
+
+func (c *NotebookOp) ExecJSON(id string, stdout io.Writer) error {
+	u, err := url.Parse(c.c.config.Origin)
+	if err != nil {
+		return err
+	}
+
+	base := u.Path
+
+	if c.k == nil {
+		u.Path = path.Join(base, "api", "kernels")
+		req, err := http.NewRequest(http.MethodPost, u.String(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "token "+c.c.config.Token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			var errmsg Error
+			err = json.NewDecoder(resp.Body).Decode(&errmsg)
+			if err != nil {
+				return err
+			}
+			return errors.New(errmsg.Message)
+		}
+
+		req, err = http.NewRequest(http.MethodGet, u.String(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Add("Authorization", "token "+c.c.config.Token)
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		var kernels []Kernel
+		err = json.NewDecoder(resp.Body).Decode(&kernels)
+		if err != nil {
+			return err
+		}
+		for _, kernel := range kernels {
+			if kernel.Name == c.d.Content.Metadata.Kernelspec.Name {
+				c.k = &kernel
+				break
+			}
+		}
+		if c.k == nil {
+			return errors.New("kernel not found")
+		}
+	}
+
+	u.Scheme = "ws"
+	u.Path = path.Join(base, "api", "kernels", c.k.ID, "channels")
+	config, err := websocket.NewConfig(u.String(), c.c.config.Origin)
+	if err != nil {
+		return err
+	}
+	config.Header.Add("Authorization", "token "+c.c.config.Token)
+	ws, err := websocket.DialConfig(config)
+	if err != nil {
+		return err
+	}
+	defer ws.Close()
+
+	for _, code := range c.d.Content.Cells {
+		if code.Source == nil {
+			continue
+		}
+		if s, ok := code.Source.(string); ok && s == "" {
+			continue
+		}
+		if code.ID != id {
+			continue
+		}
+		var header MessageHeader
+		header.MsgType = "execute_request"
+		header.MsgID = uuid.NewString()
+		header.Session = c.s
+		payload := Message{
+			Header:       header,
+			ParentHeader: header,
+			Metadata:     make(map[string]interface{}),
+			Content: MessageContent{
+				Code:   code.Source,
+				Silent: false,
+			},
+		}
+
+		err = websocket.JSON.Send(ws, payload)
+		if err != nil {
+			return err
+		}
+
+		var result ExecResult
+		var input bool
+		enc := json.NewEncoder(stdout)
+		for {
+			err := websocket.JSON.Receive(ws, &result)
+			if err != nil {
+				break
+			}
+			if result.MsgType == "error" {
+				return fmt.Errorf("%s: %s", result.Content.Ename, result.Content.Evalue)
+			}
+			if result.MsgType == "status" {
+				if input && result.Content.ExecutionState == "idle" {
+					break
+				}
+			}
+			if result.MsgType == "execute_input" {
+				input = true
+			}
+			err = enc.Encode(result)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
